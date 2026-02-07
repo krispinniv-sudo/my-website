@@ -1268,6 +1268,10 @@ export default function Home() {
                   onMouseEnter={() => setHoveredMode(mode.id)}
                   onMouseLeave={() => setHoveredMode(null)}
                   onClick={() => {
+                    if (!session) {
+                      setShowProfile(true);
+                      return;
+                    }
                     if (mode.active) {
                       setGameMode(mode.id as GameMode);
                       if (mode.id === "DUEL") {
@@ -1526,11 +1530,11 @@ function ProfileSection({ onShowProfile, gameState }: { onShowProfile: () => voi
         <img
           src={session.user?.image || ""}
           alt="Avatar"
-          className="w-7 h-7 rounded-full border border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.3)]"
+          className="w-8 h-8 rounded-full border border-purple-500/50 shadow-[0_0_10px_rgba(168,85,247,0.3)]"
         />
         <div className="hidden sm:block text-left pr-2">
-          <p className="text-[8px] font-black uppercase text-purple-400 leading-none mb-0.5">Elite</p>
-          <p className="text-[10px] font-black italic truncate max-w-[70px] leading-none uppercase">{session.user?.name?.split(' ')[0]}</p>
+          <p className="text-[10px] font-black italic truncate max-w-[100px] leading-none uppercase">{session.user?.name}</p>
+          <p className="text-[8px] font-black uppercase text-purple-400 leading-none mt-1">Player</p>
         </div>
       </button>
     );
@@ -1539,9 +1543,10 @@ function ProfileSection({ onShowProfile, gameState }: { onShowProfile: () => voi
   return (
     <button
       onClick={onShowProfile}
-      className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all backdrop-blur-sm group"
+      className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all backdrop-blur-sm group flex items-center gap-2"
     >
       <User className="w-6 h-6 text-white/40 group-hover:text-purple-400 transition-colors" />
+      <span className="text-[10px] font-black uppercase text-white/20 hidden sm:block">Sign In</span>
     </button>
   );
 }
