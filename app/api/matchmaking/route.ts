@@ -31,7 +31,7 @@ export async function POST(request: Request) {
             orderBy: { createdAt: 'asc' }
         }).catch(err => {
             console.error('[Matchmaking API] Prisma findFirst error:', err)
-            throw new Error('Database search failed')
+            throw new Error(`Database search failed: ${err.message || JSON.stringify(err)}`)
         })
 
         if (existingMatch) {
