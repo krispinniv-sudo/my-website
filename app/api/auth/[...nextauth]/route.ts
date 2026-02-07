@@ -9,13 +9,6 @@ export const authOptions = {
         GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID!,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-            authorization: {
-                params: {
-                    prompt: "consent",
-                    access_type: "offline",
-                    response_type: "code"
-                }
-            }
         }),
     ],
     callbacks: {
@@ -27,10 +20,52 @@ export const authOptions = {
             return session;
         },
     },
-    useSecureCookies: process.env.NODE_ENV === "production",
-    trustHost: true,
     secret: process.env.NEXTAUTH_SECRET,
-    debug: true,
+    trustHost: true,
+    cookies: {
+        sessionToken: {
+            name: `__Secure-next-auth.session-token`,
+            options: {
+                httpOnly: true,
+                sameSite: 'lax' as const,
+                path: '/',
+                secure: true
+            }
+        },
+        callbackUrl: {
+            name: `__Secure-next-auth.callback-url`,
+            options: {
+                sameSite: 'lax' as const,
+                path: '/',
+                secure: true
+            }
+        },
+        csrfToken: {
+            name: `__Host-next-auth.csrf-token`,
+            options: {
+                sameSite: 'lax' as const,
+                path: '/',
+                secure: true
+            }
+        },
+        pkceCodeVerifier: {
+            name: `__Secure-next-auth.pkce.code_verifier`,
+            options: {
+                sameSite: 'lax' as const,
+                path: '/',
+                secure: true
+            }
+        },
+        state: {
+            name: `__Secure-next-auth.state`,
+            options: {
+                sameSite: 'lax' as const,
+                path: '/',
+                secure: true,
+                maxAge: 900
+            }
+        },
+    }
 }
 
 const handler = NextAuth(authOptions)
