@@ -12,10 +12,6 @@ export const authOptions = {
         }),
     ],
     callbacks: {
-        async signIn({ user, account, profile }: { user: any, account: any, profile?: any }) {
-            console.log("SignIn Callback:", { email: user.email, provider: account?.provider });
-            return true;
-        },
         async session({ session, user }: { session: any, user: any }) {
             if (session.user) {
                 session.user.id = user.id;
@@ -25,7 +21,6 @@ export const authOptions = {
         },
     },
     secret: process.env.NEXTAUTH_SECRET,
-    debug: true,
 }
 
 const handler = NextAuth(authOptions)
