@@ -86,7 +86,7 @@ export async function POST(request: Request) {
                 }
             })
 
-            return NextResponse.json({ duelId: duel.id, entryId: myEntry.id })
+            return NextResponse.json({ duelId: duel.id, entryId: myEntry.id, isLeader: false })
         }
 
         // 2. No match found, enter the queue

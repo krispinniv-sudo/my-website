@@ -143,7 +143,7 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                 // Instant match! User is Player 2 (Follower)
                 setDuelId(data.duelId);
                 setMatchmakingEntryId(data.entryId);
-                setIsLeader(false);
+                setIsLeader(data.isLeader || false); // Use API response
                 setupPvPSession(data.duelId);
             } else if (data.entryId) {
                 setMatchmakingEntryId(data.entryId);
@@ -191,11 +191,19 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
             })
             .subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
+                    console.log('[PvP] Subscribed to channel, sending JOINED event');
                     setState("READY_CHECK");
+
+                    // Send JOINED event
                     channel.send({
                         type: 'broadcast',
                         event: 'game_event',
-                        payload: { type: 'JOINED', sender: session.user.id, name: session.user.user_metadata?.full_name }
+                        payload: {
+                            type: 'JOINED',
+                            sender: session.user.id,
+                            name: session.user.user_metadata?.full_name,
+                            image: session.user.user_metadata?.avatar_url
+                        }
                     });
                 }
             });
@@ -204,12 +212,24 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
     const handlePvPEvent = (payload: any) => {
         if (payload.sender === myId) return; // Ignore own events
 
+        console.log('[PvP Event]', payload.type, payload);
+
         switch (payload.type) {
             case 'JOINED':
-                setOpponent({ id: payload.sender, name: payload.name });
-                // If I'm leader, I can now start.
+                console.log('[PvP] Opponent joined:', payload.name);
+                setOpponent({ id: payload.sender, name: payload.name, image: payload.image });
+
+                // Auto-start game after 2 seconds when both players are ready
+                setTimeout(() => {
+                    if (isLeader) {
+                        console.log('[PvP] Leader auto-starting game');
+                        broadcastRound(1);
+                    }
+                }, 2000);
                 break;
+
             case 'NEXT_ROUND':
+                console.log('[PvP] Received NEXT_ROUND:', payload.round);
                 setRoundCoin(payload.coin);
                 setOptions(payload.options);
                 setUserStatus("ACTIVE");
@@ -219,6 +239,7 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                 setCurrentRound(payload.round);
                 setState("BATTLE");
                 break;
+
             case 'USER_STATUS':
                 setOpStatus(payload.status);
                 if (payload.status === 'CORRECT') {
@@ -371,16 +392,15 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                     <div className="w-24 h-24 rounded-full bg-red-500/20 flex items-center justify-center text-4xl border-2 border-red-500/20 overflow-hidden">
                         {opponent?.image ? <img src={opponent.image} alt="op" className="w-full h-full object-cover" /> : "🎮"}
                     </div>
-                    <span className="text-purple-400 font-black mt-3 tracking-widest uppercase">{opponent?.name || "JOINING..."}</span>
+                    <span className="text-purple-400 font-black mt-3 tracking-widest uppercase">{opponent?.name || "WAITING..."}</span>
                 </div>
             </div>
-            <button
-                onClick={startGame}
-                disabled={!opponent}
-                className={`text-xl font-black py-5 px-16 rounded-full uppercase tracking-widest shadow-[0_0_30px_rgba(34,197,94,0.4)] transition-all transform hover:scale-105 ${opponent ? 'bg-green-500 text-white' : 'bg-white/10 text-white/20 cursor-not-allowed'}`}
-            >
-                Fight!
-            </button>
+
+            {/* Auto-start message */}
+            <div className="flex flex-col items-center gap-2 mt-4">
+                <div className="text-green-400 font-black text-2xl animate-pulse">GET READY!</div>
+                <div className="text-white/60 text-sm">Game starting automatically...</div>
+            </div>
         </div>
     );
 
