@@ -35,7 +35,7 @@ model Session {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String    @id
   name          String?
   email         String?   @unique
   emailVerified DateTime?
@@ -43,6 +43,37 @@ model User {
   stars         Int       @default(0)
   accounts      Account[]
   sessions      Session[]
+  matchmaking   MatchmakingQueue[]
+  duelsAsP1     DuelSession[]      @relation("Player1")
+  duelsAsP2     DuelSession[]      @relation("Player2")
+}
+
+model MatchmakingQueue {
+  id        String   @id @default(cuid())
+  userId    String
+  stake     Int
+  status    String   @default("WAITING") // WAITING, MATCHED, TIMEOUT, CANCELLED
+  duelId    String?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model DuelSession {
+  id            String   @id @default(cuid())
+  player1Id     String
+  player2Id     String
+  stake         Int
+  player1Score  Int      @default(0)
+  player2Score  Int      @default(0)
+  currentRound  Int      @default(0)
+  status        String   @default("ONGOING") // ONGOING, FINISHED
+  winnerId      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  player1       User     @relation("Player1", fields: [player1Id], references: [id])
+  player2       User     @relation("Player2", fields: [player2Id], references: [id])
 }
 
 model VerificationToken {
