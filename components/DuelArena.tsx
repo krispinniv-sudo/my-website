@@ -52,18 +52,47 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
     const [timer, setTimer] = useState(10);
     const [gameResult, setGameResult] = useState<"WIN" | "LOSS" | null>(null);
 
+    const [queueCounts, setQueueCounts] = useState<{ [key: string]: number }>({});
+
     // -- Clean up on unmount --
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
             if (session) setMyId(session.user.id);
         });
 
+        // Fetch initial queue counts
+        fetchQueueCounts();
+
+        // Subscribe to MatchmakingQueue changes
+        const mQueueChannel = supabase.channel('mqueue_counts')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'MatchmakingQueue' }, () => {
+                fetchQueueCounts();
+            })
+            .subscribe();
+
         return () => {
             if (matchmakingEntryId) cancelMatchmaking(matchmakingEntryId);
             if (channelRef.current) channelRef.current.unsubscribe();
             if (localStream) localStream.getTracks().forEach(t => t.stop());
+            mQueueChannel.unsubscribe();
         };
     }, [matchmakingEntryId, localStream]);
+
+    const fetchQueueCounts = async () => {
+        const { data, error } = await supabase
+            .from('MatchmakingQueue')
+            .select('stake')
+            .eq('status', 'WAITING');
+
+        if (!error && data) {
+            const counts: { [key: string]: number } = {};
+            data.forEach((entry: any) => {
+                const stake = entry.stake.toString();
+                counts[stake] = (counts[stake] || 0) + 1;
+            });
+            setQueueCounts(counts);
+        }
+    };
 
     const cancelMatchmaking = async (id: string) => {
         await fetch('/api/matchmaking', {
@@ -105,17 +134,11 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                 setupPvPSession(data.duelId);
             } else if (data.entryId) {
                 setMatchmakingEntryId(data.entryId);
-                setIsLeader(true); // User is Player 1 (Leader)
+                setIsLeader(true);
 
-                // Start 15s timeout
-                const timeout = setTimeout(() => {
-                    if (state === "MATCHMAKING") {
-                        setState("TIMEOUT");
-                        cancelMatchmaking(data.entryId);
-                    }
-                }, 15000);
+                // No more auto-timeout to TIMEOUT state. 
+                // We stay in MATCHMAKING until a player joins or we cancel.
 
-                // Subscribe to matchmaking queue changes
                 const subscription = supabase
                     .channel('matchmaking')
                     .on('postgres_changes', {
@@ -125,7 +148,6 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                         filter: `id=eq.${data.entryId}`
                     }, (payload) => {
                         if (payload.new.status === 'MATCHED' && payload.new.duelId) {
-                            clearTimeout(timeout);
                             setDuelId(payload.new.duelId);
                             setupPvPSession(payload.new.duelId);
                         }
@@ -133,7 +155,6 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                     .subscribe();
 
                 return () => {
-                    clearTimeout(timeout);
                     subscription.unsubscribe();
                 };
             }
@@ -287,8 +308,18 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
             <h3 className="text-2xl font-black italic text-white animate-pulse uppercase tracking-[0.2em]">Searching for Player...</h3>
             <div className="flex flex-col items-center gap-2 mt-4">
                 <div className="text-white/40 font-mono text-xs">Staked: {selectedStake} <Star className="w-3 h-3 inline" /></div>
-                <div className="text-purple-400 font-black text-xl">00:{(15 - (Math.floor(Date.now() / 1000) % 15)).toString().padStart(2, '0')}</div>
+                <div className="text-purple-400 font-black text-xl">WAITING...</div>
             </div>
+
+            <button
+                onClick={() => {
+                    if (matchmakingEntryId) cancelMatchmaking(matchmakingEntryId);
+                    setState("SETUP");
+                }}
+                className="mt-12 px-8 py-3 rounded-full border border-white/20 text-white/50 font-black uppercase text-xs hover:border-white/50 hover:text-white transition-all"
+            >
+                Cancel Search
+            </button>
         </div>
     );
 
@@ -403,7 +434,17 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                                 {stake.cost} <Star className="w-6 h-6 fill-current" />
                             </div>
                         </div>
-                        {selectedStake === stake.cost && <div className="bg-white text-black p-2 rounded-full shadow-lg"><CheckCircle2 className="w-6 h-6" /></div>}
+
+                        {/* Live Counter */}
+                        <div className="flex flex-col items-end gap-1">
+                            <div className="flex items-center gap-1.5 px-3 py-1 bg-white/10 rounded-full border border-white/5">
+                                <User className={`w-3 h-3 ${queueCounts[stake.cost.toString()] > 0 ? "text-green-400" : "text-white/20"}`} />
+                                <span className={`text-[10px] font-black ${(queueCounts[stake.cost.toString()] || 0) > 0 ? "text-white" : "text-white/20"}`}>
+                                    {queueCounts[stake.cost.toString()] || 0}
+                                </span>
+                            </div>
+                            {selectedStake === stake.cost && <div className="bg-white text-black p-1.5 rounded-full shadow-lg"><CheckCircle2 className="w-5 h-5" /></div>}
+                        </div>
                     </button>
                 ))}
             </div>

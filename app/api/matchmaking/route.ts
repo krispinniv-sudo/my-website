@@ -22,7 +22,6 @@ export async function POST(request: Request) {
         where: {
             stake: Number(stake),
             status: 'WAITING',
-            userId: { not: user.id },
             createdAt: { gte: new Date(Date.now() - 30000) } // Within last 30s
         },
         orderBy: { createdAt: 'asc' }
