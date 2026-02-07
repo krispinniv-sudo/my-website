@@ -39,6 +39,7 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
     const [isLeader, setIsLeader] = useState(false); // Player 1 is the leader
     const [myId, setMyId] = useState<string | null>(null);
     const channelRef = useRef<any>(null);
+    const isLeaderRef = useRef(false); // Ref for immediate access
     const [myReady, setMyReady] = useState(false);
     const [opponentReady, setOpponentReady] = useState(false);
 
@@ -143,13 +144,18 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
 
             if (data.duelId) {
                 // Instant match! User is Player 2 (Follower)
+                const leader = data.isLeader || false;
+                console.log('[Matchmaking] Instant match! isLeader:', leader);
                 setDuelId(data.duelId);
                 setMatchmakingEntryId(data.entryId);
-                setIsLeader(data.isLeader || false); // Use API response
-                setupPvPSession(data.duelId);
+                setIsLeader(leader);
+                isLeaderRef.current = leader; // Set ref immediately
+                setupPvPSession(data.duelId, leader);
             } else if (data.entryId) {
                 setMatchmakingEntryId(data.entryId);
                 setIsLeader(true);
+                isLeaderRef.current = true; // Set ref immediately
+                console.log('[Matchmaking] Waiting for opponent, I am the leader');
 
                 // No more auto-timeout to TIMEOUT state. 
                 // We stay in MATCHMAKING until a player joins or we cancel.
@@ -163,8 +169,9 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                         filter: `id=eq.${data.entryId}`
                     }, (payload) => {
                         if (payload.new.status === 'MATCHED' && payload.new.duelId) {
+                            console.log('[Matchmaking] Match found! isLeader: true');
                             setDuelId(payload.new.duelId);
-                            setupPvPSession(payload.new.duelId);
+                            setupPvPSession(payload.new.duelId, true); // Leader is true here
                         }
                     })
                     .subscribe();
@@ -180,9 +187,14 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
         }
     };
 
-    const setupPvPSession = async (id: string) => {
+    const setupPvPSession = async (id: string, leaderStatus: boolean) => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
+
+        console.log('[PvP] Setting up session for duel:', id);
+        console.log('[PvP] isLeader parameter:', leaderStatus);
+        console.log('[PvP] isLeader state:', isLeader);
+        console.log('[PvP] isLeaderRef:', isLeaderRef.current);
 
         const channel = supabase.channel(`duel:${id}`);
         channelRef.current = channel;
@@ -192,8 +204,12 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                 handlePvPEvent(payload.payload);
             })
             .subscribe(async (status) => {
+                console.log('[PvP] Channel subscription status:', status);
                 if (status === 'SUBSCRIBED') {
-                    console.log('[PvP] Subscribed to channel, sending JOINED event');
+                    console.log('[PvP] ✅ Subscribed to channel:', `duel:${id}`);
+                    console.log('[PvP] My ID:', session.user.id);
+                    console.log('[PvP] isLeader (param):', leaderStatus);
+                    console.log('[PvP] isLeaderRef.current:', isLeaderRef.current);
                     setState("READY_CHECK");
 
                     // Send JOINED event
@@ -288,6 +304,7 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
 
     // Ready Check
     const handleReady = () => {
+        console.log('[PvP] handleReady called, myId:', myId, 'isLeader:', isLeader);
         setMyReady(true);
         channelRef.current?.send({
             type: 'broadcast',
@@ -298,11 +315,18 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
 
     // Auto-start when both players are ready
     useEffect(() => {
-        if (myReady && opponentReady && isLeader && state === "READY_CHECK") {
-            console.log('[PvP] Both players ready, leader starting game');
-            setTimeout(() => {
+        const currentLeader = isLeaderRef.current;
+        console.log('[PvP useEffect] myReady:', myReady, 'opponentReady:', opponentReady, 'isLeader:', isLeader, 'isLeaderRef:', currentLeader, 'state:', state);
+
+        if (myReady && opponentReady && currentLeader && state === "READY_CHECK") {
+            console.log('[PvP] ✅ Both players ready, leader starting game in 1 second...');
+            const timeoutId = setTimeout(() => {
+                console.log('[PvP] 🚀 Broadcasting round 1');
                 broadcastRound(1);
             }, 1000);
+            return () => clearTimeout(timeoutId);
+        } else if (myReady && opponentReady && !currentLeader && state === "READY_CHECK") {
+            console.log('[PvP] ⏳ Both ready but I am NOT the leader, waiting for leader to start...');
         }
     }, [myReady, opponentReady, isLeader, state, broadcastRound]);
 
