@@ -19,6 +19,27 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Stake is required' }, { status: 400 })
         }
 
+        // 1. Ensure User exists in Prisma (Sync from Supabase)
+        // This handles cases where the auth callback might have been skipped or failed.
+        await prisma.user.upsert({
+            where: { id: user.id },
+            update: {
+                email: user.email,
+                name: user.user_metadata?.full_name || user.email?.split('@')[0],
+                image: user.user_metadata?.avatar_url,
+            },
+            create: {
+                id: user.id,
+                email: user.email,
+                name: user.user_metadata?.full_name || user.email?.split('@')[0],
+                image: user.user_metadata?.avatar_url,
+                stars: 500,
+            }
+        }).catch(err => {
+            console.error('[Matchmaking API] User Sync Error:', err)
+            // We continue as it might just be a transient DB error, but it's risky
+        })
+
         console.log(`[Matchmaking API] User ${user.id} joining queue for stake ${stake}`)
 
         // 1. Look for an existing WAITING match for the same stake
