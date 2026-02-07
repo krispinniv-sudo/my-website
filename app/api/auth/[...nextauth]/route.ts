@@ -3,7 +3,7 @@ import GoogleProvider from "next-auth/providers/google"
 import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import { prisma } from "@/lib/prisma"
 
-const handler = NextAuth({
+export const authOptions = {
     adapter: PrismaAdapter(prisma),
     providers: [
         GoogleProvider({
@@ -12,17 +12,22 @@ const handler = NextAuth({
         }),
     ],
     callbacks: {
-        async session({ session, user }) {
+        async signIn({ user, account, profile }: { user: any, account: any, profile?: any }) {
+            console.log("SignIn Callback:", { email: user.email, provider: account?.provider });
+            return true;
+        },
+        async session({ session, user }: { session: any, user: any }) {
             if (session.user) {
-                // @ts-ignore
                 session.user.id = user.id;
-                // @ts-ignore
                 session.user.stars = user.stars || 0;
             }
             return session;
         },
     },
     secret: process.env.NEXTAUTH_SECRET,
-})
+    debug: true,
+}
+
+const handler = NextAuth(authOptions)
 
 export { handler as GET, handler as POST }
