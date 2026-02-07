@@ -39,6 +39,8 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
     const [isLeader, setIsLeader] = useState(false); // Player 1 is the leader
     const [myId, setMyId] = useState<string | null>(null);
     const channelRef = useRef<any>(null);
+    const [myReady, setMyReady] = useState(false);
+    const [opponentReady, setOpponentReady] = useState(false);
 
     // --- Game Logic State ---
     const [myScore, setMyScore] = useState(0);
@@ -218,14 +220,11 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
             case 'JOINED':
                 console.log('[PvP] Opponent joined:', payload.name);
                 setOpponent({ id: payload.sender, name: payload.name, image: payload.image });
+                break;
 
-                // Auto-start game after 2 seconds when both players are ready
-                setTimeout(() => {
-                    if (isLeader) {
-                        console.log('[PvP] Leader auto-starting game');
-                        broadcastRound(1);
-                    }
-                }, 2000);
+            case 'READY':
+                console.log('[PvP] Opponent is ready!');
+                setOpponentReady(true);
                 break;
 
             case 'NEXT_ROUND':
@@ -287,11 +286,25 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
         });
     };
 
-    // Battle Loop START
-    const startGame = async () => {
-        if (!isLeader) return;
-        broadcastRound(1);
+    // Ready Check
+    const handleReady = () => {
+        setMyReady(true);
+        channelRef.current?.send({
+            type: 'broadcast',
+            event: 'game_event',
+            payload: { type: 'READY', sender: myId }
+        });
     };
+
+    // Auto-start when both players are ready
+    useEffect(() => {
+        if (myReady && opponentReady && isLeader && state === "READY_CHECK") {
+            console.log('[PvP] Both players ready, leader starting game');
+            setTimeout(() => {
+                broadcastRound(1);
+            }, 1000);
+        }
+    }, [myReady, opponentReady, isLeader, state, broadcastRound]);
 
     // Timer Logic
     useEffect(() => {
@@ -384,22 +397,47 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
             <h2 className="text-4xl font-black italic text-white animate-pulse">OPPONENT FOUND!</h2>
             <div className="flex gap-10 items-center">
                 <div className="flex flex-col items-center">
-                    <div className="w-24 h-24 rounded-full bg-white/10 flex items-center justify-center text-4xl border-2 border-white/20">👤</div>
+                    <div className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl border-4 transition-all ${myReady ? 'bg-green-500/20 border-green-500' : 'bg-white/10 border-white/20'
+                        }`}>👤</div>
                     <span className="text-white font-black mt-3 tracking-widest">YOU</span>
+                    {myReady && <CheckCircle2 className="w-6 h-6 text-green-400 mt-1" />}
                 </div>
                 <div className="text-4xl font-black text-red-500 italic">VS</div>
                 <div className="flex flex-col items-center">
-                    <div className="w-24 h-24 rounded-full bg-red-500/20 flex items-center justify-center text-4xl border-2 border-red-500/20 overflow-hidden">
+                    <div className={`w-24 h-24 rounded-full flex items-center justify-center text-4xl border-4 overflow-hidden transition-all ${opponentReady ? 'bg-green-500/20 border-green-500' : 'bg-red-500/20 border-red-500/20'
+                        }`}>
                         {opponent?.image ? <img src={opponent.image} alt="op" className="w-full h-full object-cover" /> : "🎮"}
                     </div>
                     <span className="text-purple-400 font-black mt-3 tracking-widest uppercase">{opponent?.name || "WAITING..."}</span>
+                    {opponentReady && <CheckCircle2 className="w-6 h-6 text-green-400 mt-1" />}
                 </div>
             </div>
 
-            {/* Auto-start message */}
-            <div className="flex flex-col items-center gap-2 mt-4">
-                <div className="text-green-400 font-black text-2xl animate-pulse">GET READY!</div>
-                <div className="text-white/60 text-sm">Game starting automatically...</div>
+            {/* Ready button or waiting message */}
+            <div className="flex flex-col items-center gap-4 mt-4">
+                {!myReady ? (
+                    <button
+                        onClick={handleReady}
+                        disabled={!opponent}
+                        className={`text-2xl font-black py-6 px-20 rounded-full uppercase tracking-widest shadow-[0_0_40px_rgba(34,197,94,0.6)] transition-all transform hover:scale-105 ${opponent ? 'bg-green-500 text-white hover:bg-green-400' : 'bg-white/10 text-white/20 cursor-not-allowed'
+                            }`}
+                    >
+                        I'M READY!
+                    </button>
+                ) : (
+                    <div className="flex flex-col items-center gap-2">
+                        <div className="text-green-400 font-black text-2xl flex items-center gap-2">
+                            <CheckCircle2 className="w-8 h-8" />
+                            YOU'RE READY!
+                        </div>
+                        {!opponentReady && (
+                            <div className="text-white/60 text-sm animate-pulse">Waiting for opponent...</div>
+                        )}
+                        {opponentReady && (
+                            <div className="text-green-400 text-lg font-black animate-pulse">STARTING GAME...</div>
+                        )}
+                    </div>
+                )}
             </div>
         </div>
     );
