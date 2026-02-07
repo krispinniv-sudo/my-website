@@ -1,9 +1,10 @@
 "use client";
 
+import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Star, Trophy, ArrowLeft, Crown } from "lucide-react";
 import Link from "next/link";
-import { useSession } from "next-auth/react";
+import { createClient } from "../../lib/supabase/client";
 
 // Mock data for initial design
 const MOCK_LEADERBOARD = [
@@ -20,7 +21,20 @@ const MOCK_LEADERBOARD = [
 ];
 
 export default function LeaderboardPage() {
-    const { data: session } = useSession();
+    const supabase = createClient();
+    const [session, setSession] = useState<any>(null);
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setSession(session);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setSession(session);
+        });
+
+        return () => subscription.unsubscribe();
+    }, [supabase.auth]);
 
     // Find current user in mock or simulate
     const currentUserRank = 42;
