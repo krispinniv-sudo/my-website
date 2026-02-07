@@ -32,7 +32,7 @@ import { RankTimeIcon, TokenPuzzleIcon, DuelIcon, ZenModeIcon } from "../compone
 import DuelArena from "../components/DuelArena";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { useSession, signIn, signOut } from "next-auth/react";
+import { createClient } from "../lib/supabase/client";
 
 // --- Types & Constants ---
 type GameState = "IDLE" | "LOADING" | "LEVEL_SELECT" | "PLAYING" | "GAMEOVER" | "MATCHMAKING" | "DUEL_BATTLE";
@@ -519,7 +519,33 @@ const MatchmakingOverlay = ({ onCancel, onFound }: { onCancel: () => void; onFou
 
 
 export default function Home() {
-  const { data: session } = useSession();
+  const supabase = createClient();
+  const [session, setSession] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase.auth]);
+
+  const signInWithGoogle = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+  };
+
+  const signOutUser = async () => {
+    await supabase.auth.signOut();
+  };
   const [gameState, setGameState] = useState<GameState>("IDLE");
   const [coins, setCoins] = useState<Coin[]>([]);
   const [currentCoin, setCurrentCoin] = useState<Coin | null>(null);
@@ -1216,6 +1242,7 @@ export default function Home() {
           <ProfileSection
             onShowProfile={() => setShowProfile(true)}
             gameState={gameState}
+            session={session}
           />
         </div>
       </header>
@@ -1471,7 +1498,7 @@ export default function Home() {
                   <div key={i} className="bg-white/5 p-5 rounded-[40px] border border-white/5">
                     <div className="flex items-center gap-2 mb-1">
                       <stat.icon className={`w-3 h-3 ${stat.color}`} />
-                      <span className="text-[10px] text-white/20 uppercase font-black">{stat.label}</span>
+                      <span className="text-[10px] text-white/20 uppercase font-black"></span>
                     </div>
                     <div className="text-xl font-black italic truncate">{stat.value}</div>
                   </div>
@@ -1493,7 +1520,7 @@ export default function Home() {
 
               {session ? (
                 <button
-                  onClick={() => signOut()}
+                  onClick={() => signOutUser()}
                   className="w-full py-5 rounded-[30px] bg-red-500/10 border border-red-500/20 text-red-500 font-black uppercase tracking-widest hover:bg-red-500/20 transition-all flex items-center justify-center gap-3 shadow-lg"
                 >
                   <LogOut className="w-5 h-5" />
@@ -1501,7 +1528,7 @@ export default function Home() {
                 </button>
               ) : (
                 <button
-                  onClick={() => signIn("google")}
+                  onClick={() => signInWithGoogle()}
                   className="w-full py-5 rounded-[30px] bg-purple-600 border border-purple-400/50 text-white font-black uppercase tracking-widest hover:bg-purple-500 transition-all flex items-center justify-center gap-3 shadow-[0_0_30px_rgba(147,51,234,0.3)]"
                 >
                   <img src="https://www.google.com/favicon.ico" className="w-5 h-5 filter brightness-200" alt="Google" />
@@ -1518,8 +1545,7 @@ export default function Home() {
 
 // --- Helper Components ---
 
-function ProfileSection({ onShowProfile, gameState }: { onShowProfile: () => void, gameState: GameState }) {
-  const { data: session } = useSession();
+function ProfileSection({ onShowProfile, gameState, session }: { onShowProfile: () => void, gameState: GameState, session: any }) {
 
   if (session) {
     return (
