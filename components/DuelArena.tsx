@@ -114,9 +114,16 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
         if (!selectedStake) return;
 
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            setLocalStream(stream);
-            setPermissionGranted(true);
+            // Make camera optional to avoid blocking matchmaking if user denies or busy
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                setLocalStream(stream);
+                setPermissionGranted(true);
+            } catch (cameraErr) {
+                console.warn("Camera access denied or busy:", cameraErr);
+                setPermissionGranted(false);
+            }
+
             setState("MATCHMAKING");
 
             const res = await fetch('/api/matchmaking', {
@@ -124,6 +131,12 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ stake: selectedStake })
             });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Unknown server error' }));
+                throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
+            }
+
             const data = await res.json();
 
             if (data.duelId) {
@@ -158,8 +171,9 @@ export default function DuelArena({ coins, userPoints, onUpdatePoints, onExit }:
                     subscription.unsubscribe();
                 };
             }
-        } catch (err) {
-            console.error("Matchmaking error:", err);
+        } catch (err: any) {
+            console.error("Matchmaking error details:", err);
+            alert(`Matchmaking failed: ${err.message || 'Check connection'}`);
             setState("SELECT_TYPE");
         }
     };

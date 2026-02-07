@@ -3,87 +3,113 @@ import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 
 export async function POST(request: Request) {
-    const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
+    try {
+        const supabase = await createClient()
+        const { data: { session }, error: authError } = await supabase.auth.getSession()
 
-    if (!session) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+        if (authError || !session) {
+            console.error('[Matchmaking API] Auth Error:', authError)
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
 
-    const user = session.user
-    const { stake } = await request.json()
+        const user = session.user
+        const { stake } = await request.json()
 
-    if (!stake) {
-        return NextResponse.json({ error: 'Stake is required' }, { status: 400 })
-    }
+        if (!stake) {
+            return NextResponse.json({ error: 'Stake is required' }, { status: 400 })
+        }
 
-    // 1. Look for an existing WAITING match for the same stake (not by the same user)
-    const existingMatch = await prisma.matchmakingQueue.findFirst({
-        where: {
-            stake: Number(stake),
-            status: 'WAITING',
-            createdAt: { gte: new Date(Date.now() - 30000) } // Within last 30s
-        },
-        orderBy: { createdAt: 'asc' }
-    })
+        console.log(`[Matchmaking API] User ${user.id} joining queue for stake ${stake}`)
 
-    if (existingMatch) {
-        // Found a match! Create a DuelSession
-        const duel = await prisma.duelSession.create({
-            data: {
-                player1Id: existingMatch.userId,
-                player2Id: user.id,
+        // 1. Look for an existing WAITING match for the same stake
+        const existingMatch = await prisma.matchmakingQueue.findFirst({
+            where: {
                 stake: Number(stake),
-            }
+                status: 'WAITING',
+                createdAt: { gte: new Date(Date.now() - 60000) } // Increased to 60s for testing
+            },
+            orderBy: { createdAt: 'asc' }
+        }).catch(err => {
+            console.error('[Matchmaking API] Prisma findFirst error:', err)
+            throw new Error('Database search failed')
         })
 
-        // Update the matched entries
-        await prisma.matchmakingQueue.update({
-            where: { id: existingMatch.id },
-            data: { status: 'MATCHED', duelId: duel.id }
-        })
+        if (existingMatch) {
+            console.log(`[Matchmaking API] Found match: ${existingMatch.id} for user ${user.id}`)
 
-        // Create a matched entry for the current user too (for state tracking)
-        const myEntry = await prisma.matchmakingQueue.create({
+            // Found a match! Create a DuelSession
+            const duel = await prisma.duelSession.create({
+                data: {
+                    player1Id: existingMatch.userId,
+                    player2Id: user.id,
+                    stake: Number(stake),
+                }
+            }).catch(err => {
+                console.error('[Matchmaking API] Prisma DuelSession create error:', err)
+                throw new Error('Failed to create duel session')
+            })
+
+            // Update the matched entries
+            await prisma.matchmakingQueue.update({
+                where: { id: existingMatch.id },
+                data: { status: 'MATCHED', duelId: duel.id }
+            })
+
+            // Create a matched entry for the current user too (for state tracking)
+            const myEntry = await prisma.matchmakingQueue.create({
+                data: {
+                    userId: user.id,
+                    stake: Number(stake),
+                    status: 'MATCHED',
+                    duelId: duel.id
+                }
+            })
+
+            return NextResponse.json({ duelId: duel.id, entryId: myEntry.id })
+        }
+
+        // 2. No match found, enter the queue
+        const newEntry = await prisma.matchmakingQueue.create({
             data: {
                 userId: user.id,
                 stake: Number(stake),
-                status: 'MATCHED',
-                duelId: duel.id
+                status: 'WAITING'
             }
+        }).catch(err => {
+            console.error('[Matchmaking API] Prisma Queue create error:', err)
+            throw new Error('Failed to join queue')
         })
 
-        return NextResponse.json({ duelId: duel.id, entryId: myEntry.id })
+        console.log(`[Matchmaking API] User ${user.id} added to queue: ${newEntry.id}`)
+        return NextResponse.json({ entryId: newEntry.id })
+
+    } catch (err: any) {
+        console.error('[Matchmaking API] Global Catch:', err)
+        return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 })
     }
-
-    // 2. No match found, enter the queue
-    const newEntry = await prisma.matchmakingQueue.create({
-        data: {
-            userId: user.id,
-            stake: Number(stake),
-            status: 'WAITING'
-        }
-    })
-
-    return NextResponse.json({ entryId: newEntry.id })
 }
 
 export async function DELETE(request: Request) {
-    const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
+    try {
+        const supabase = await createClient()
+        const { data: { session } } = await supabase.auth.getSession()
 
-    if (!session) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        if (!session) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
+        const { entryId } = await request.json()
+
+        if (entryId) {
+            await prisma.matchmakingQueue.update({
+                where: { id: entryId },
+                data: { status: 'CANCELLED' }
+            })
+        }
+
+        return NextResponse.json({ success: true })
+    } catch (err: any) {
+        console.error('[Matchmaking API] DELETE Catch:', err)
+        return NextResponse.json({ error: 'Failed to cancel' }, { status: 500 })
     }
-
-    const { entryId } = await request.json()
-
-    if (entryId) {
-        await prisma.matchmakingQueue.update({
-            where: { id: entryId },
-            data: { status: 'CANCELLED' }
-        })
-    }
-
-    return NextResponse.json({ success: true })
 }
